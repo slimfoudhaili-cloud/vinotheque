@@ -123,15 +123,19 @@ Si une information est absente ou illisible, mets null.` }
   return JSON.parse(text);
 }
 
-// ─── PRICE ESTIMATION via Claude API ─────────────────────────────────────────
+// ─── PRICE + APOGÉE ESTIMATION via Claude API ────────────────────────────────
 async function estimatePriceFromClaude(name, appellation, year) {
   const data = await callClaude({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 200,
+    max_tokens: 300,
     messages: [{
       role: "user",
-      content: `Estimation de prix marché actuel (€) pour : "${name}" ${appellation || ""} ${year || ""}.
-Réponds UNIQUEMENT en JSON valide : {"price": <entier ou null>, "note": "<1 phrase>"}`
+      content: `Pour ce vin : "${name}" ${appellation || ""} ${year || ""}, donne :
+1. Une estimation de prix marché actuel (€)
+2. La fenêtre d'apogée (année début et fin idéales pour boire)
+
+Réponds UNIQUEMENT en JSON valide :
+{"price": <entier ou null>, "note": "<1 phrase>", "apogee_from": <année entière ou null>, "apogee_to": <année entière ou null>}`
     }]
   });
   const text = (data.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
@@ -225,24 +229,13 @@ function AddWineSheet({ userId, onClose, onAdded }) {
       const previewUrl = URL.createObjectURL(file);
       setScanPreview(previewUrl);
       // Convert to base64
-      // Convert + resize to base64
-const base64 = await new Promise((res, rej) => {
-  const img = new Image();
-  img.onload = () => {
-    const canvas = document.createElement("canvas");
-    const MAX = 1200;
-    let w = img.width, h = img.height;
-    if (w > MAX) { h = (h * MAX) / w; w = MAX; }
-    if (h > MAX) { w = (w * MAX) / h; h = MAX; }
-    canvas.width = w;
-    canvas.height = h;
-    canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-    res(canvas.toDataURL("image/jpeg", 0.8).split(",")[1]);
-  };
-  img.onerror = rej;
-  img.src = URL.createObjectURL(file);
-});
-const mediaType = "image/jpeg";);
+      const base64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result.split(",")[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const mediaType = file.type || "image/jpeg";
       const result = await scanLabelWithClaude(base64, mediaType);
       // Pré-remplir le formulaire
       if (result.name)        set("name",        result.name);
@@ -262,6 +255,8 @@ const mediaType = "image/jpeg";);
     try {
       const est = await estimatePriceFromClaude(form.name, form.appellation, form.year);
       setPriceEst(est);
+      if (est.apogee_from) set("apogeeFrom", String(est.apogee_from));
+      if (est.apogee_to)   set("apogeeTo",   String(est.apogee_to));
     } catch { setPriceEst({ price: null, note: "Indisponible" }); }
     setLoadingPrice(false);
   }
@@ -390,6 +385,11 @@ const mediaType = "image/jpeg";);
               <div>
                 <div className="text-white font-semibold">{priceEst.price ? `${priceEst.price} €` : "Non trouvé"}</div>
                 <div className="text-stone-400 text-xs mt-0.5">{priceEst.note}</div>
+                {priceEst.apogee_from && (
+                  <div className="text-emerald-400 text-xs mt-1">
+                    Apogée estimée : {priceEst.apogee_from}–{priceEst.apogee_to}
+                  </div>
+                )}
               </div>
             )}
           </div>
