@@ -544,7 +544,7 @@ function EditWineSheet({ wine, onClose, onUpdated }) {
 }
 
 // ─── WINE DETAIL ──────────────────────────────────────────────────────────────
-function WineDetail({ wine, onClose, onDrink, onDelete, onEdit, onDrinkClick }) {
+function WineDetail({ wine, onClose, onDrink, onDelete, onEdit, onDrinkClick, onPairing }) {
   const urgency = getDrinkUrgency(wine);
   const meta    = COLOR_META[wine.color] || COLOR_META.rouge;
   const RANGE_START = 2000, RANGE_END = 2060;
@@ -612,6 +612,10 @@ function WineDetail({ wine, onClose, onDrink, onDelete, onEdit, onDrinkClick }) 
             onClick={() => onEdit(wine)}
             className="bg-stone-800 text-amber-400 rounded-xl px-4 py-3.5 text-sm"
           >✏️</button>
+          <button
+            onClick={() => onPairing(wine)}
+            className="bg-stone-800 text-emerald-400 rounded-xl px-4 py-3.5 text-sm"
+          >🍽️</button>
           <button
             onClick={() => { onDelete(wine); onClose(); }}
             className="bg-stone-800 text-red-400 rounded-xl px-4 py-3.5 text-sm"
@@ -706,6 +710,66 @@ function TastingsView({ tastings, loading }) {
   );
 }
 
+
+// ─── FOOD PAIRING SHEET ───────────────────────────────────────────────────────
+function FoodPairingSheet({ wine, onClose }) {
+  const [pairings, setPairings] = useState(null);
+  const [loading, setLoading]   = useState(true);
+
+  useEffect(() => {
+    async function load() {
+      try {
+        const data = await callClaude({
+          model: "claude-sonnet-4-20250514",
+          max_tokens: 400,
+          messages: [{
+            role: "user",
+            content: `Tu es un sommelier expert. Pour ce vin : "${wine.name}" ${wine.appellation || ""} ${wine.year} (${wine.color}), suggère 5 accords mets-vins précis et gourmands.
+Réponds UNIQUEMENT en JSON valide :
+{"pairings": [{"dish": "<nom du plat>", "why": "<explication courte en 1 phrase>"}]}`
+          }]
+        });
+        const text = (data.content?.[0]?.text || "{}").replace(/\`\`\`json|\`\`\`/g, "").trim();
+        const parsed = JSON.parse(text);
+        setPairings(parsed.pairings || []);
+      } catch {
+        setPairings([]);
+      }
+      setLoading(false);
+    }
+    load();
+  }, []);
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-end" onClick={onClose}>
+      <div className="bg-stone-950 rounded-t-2xl w-full max-h-[80vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-white font-semibold">Accords mets-vins</h2>
+          <button onClick={onClose} className="text-stone-400 text-xl">✕</button>
+        </div>
+        <div className="text-stone-400 text-xs mb-5">{wine.name} · {wine.year}</div>
+
+        {loading && (
+          <div className="text-center py-8">
+            <div className="text-stone-400 text-sm">Consultation du sommelier…</div>
+          </div>
+        )}
+
+        {!loading && pairings?.length === 0 && (
+          <div className="text-stone-500 text-sm text-center py-6">Suggestions indisponibles</div>
+        )}
+
+        {!loading && pairings?.map((p, i) => (
+          <div key={i} className="bg-stone-900 rounded-xl p-4 mb-3">
+            <div className="text-white text-sm font-medium mb-1">🍽️ {p.dish}</div>
+            <div className="text-stone-400 text-xs">{p.why}</div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
 function AuthScreen({ onAuth }) {
   const [email, setEmail]       = useState("");
@@ -768,6 +832,7 @@ export default function CaveApp() {
   const [selected, setSelected] = useState(null);
   const [editingWine, setEditingWine] = useState(null);
   const [drinkingWine, setDrinkingWine] = useState(null);
+  const [pairingWine, setPairingWine]   = useState(null);
   const [tastings, setTastings]   = useState([]);
   const [tastingsLoading, setTastingsLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -1003,7 +1068,8 @@ export default function CaveApp() {
       </nav>
 
       {showAdd && <AddWineSheet userId={user.id} onClose={() => setShowAdd(false)} onAdded={handleAdded} />}
-      {selected && <WineDetail wine={selected} onClose={() => setSelected(null)} onDrink={handleDrink} onDelete={handleDelete} onEdit={(w) => { setEditingWine(w); setSelected(null); }} onDrinkClick={(w) => setDrinkingWine(w)} />}
+      {selected && <WineDetail wine={selected} onClose={() => setSelected(null)} onDrink={handleDrink} onDelete={handleDelete} onEdit={(w) => { setEditingWine(w); setSelected(null); }} onDrinkClick={(w) => setDrinkingWine(w)} onPairing={(w) => setPairingWine(w)} />}
+      {pairingWine && <FoodPairingSheet wine={pairingWine} onClose={() => setPairingWine(null)} />}
       {drinkingWine && <DrinkSheet wine={drinkingWine} onClose={() => setDrinkingWine(null)} onConfirm={(note, score) => handleDrink(drinkingWine, note, score)} />}
       {editingWine && <EditWineSheet wine={editingWine} onClose={() => setEditingWine(null)} onUpdated={handleUpdated} />}
     </div>
