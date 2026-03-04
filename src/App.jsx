@@ -262,6 +262,7 @@ function AddWineSheet({ userId, onClose, onAdded }) {
   }
 
   async function submit() {
+    console.log("submit called", form);
     if (!form.name || !form.year || !form.color) return;
     setSaving(true);
     try {
