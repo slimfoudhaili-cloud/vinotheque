@@ -11,7 +11,7 @@
 // 5. npm run dev
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { createClient } from "@supabase/supabase-js";
 
 // ─── SUPABASE CLIENT ──────────────────────────────────────────────────────────
@@ -85,6 +85,43 @@ async function logTasting(wine) {
     wine_name:  wine.name,
     wine_year:  wine.year,
   }]);
+}
+
+// ─── SCAN ÉTIQUETTE via Claude Vision ────────────────────────────────────────
+async function scanLabelWithClaude(base64Image, mediaType) {
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "claude-sonnet-4-20250514",
+      max_tokens: 300,
+      messages: [{
+        role: "user",
+        content: [
+          {
+            type: "image",
+            source: { type: "base64", media_type: mediaType, data: base64Image }
+          },
+          {
+            type: "text",
+            text: `Analyse cette étiquette de vin et extrais les informations.
+Réponds UNIQUEMENT en JSON valide :
+{
+  "name": "<nom du domaine/château>",
+  "appellation": "<appellation ou cru>",
+  "year": <millésime entier ou null>,
+  "region": "<région viticole>",
+  "color": "<rouge|blanc|rosé|champagne>"
+}
+Si une information est absente ou illisible, mets null.`
+          }
+        ]
+      }]
+    })
+  });
+  const data = await res.json();
+  const text = (data.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
+  return JSON.parse(text);
 }
 
 // ─── PRICE ESTIMATION via Claude API ─────────────────────────────────────────
@@ -170,15 +207,49 @@ function WineCard({ wine, onDrink, onDelete, onClick }) {
 // ─── ADD WINE SHEET ───────────────────────────────────────────────────────────
 function AddWineSheet({ userId, onClose, onAdded }) {
   const empty = { name: "", appellation: "", color: "rouge", year: "", quantity: "1", region: "", notes: "", apogeeFrom: "", apogeeTo: "" };
-  const [form, setForm]       = useState(empty);
+  const [form, setForm]         = useState(empty);
   const [priceEst, setPriceEst] = useState(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
-  const [saving, setSaving]   = useState(false);
-  const [error, setError]     = useState(null);
+  const [loadingScan, setLoadingScan]   = useState(false);
+  const [scanPreview, setScanPreview]   = useState(null);
+  const [saving, setSaving]     = useState(false);
+  const [error, setError]       = useState(null);
+  const fileRef = useRef(null);
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
   const IC  = "w-full bg-stone-800 text-white rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-amber-600";
   const LC  = "text-stone-400 text-xs mb-1 block";
+
+  // ── Scan étiquette ──
+  async function handleScan(e) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setLoadingScan(true);
+    setError(null);
+    try {
+      // Preview
+      const previewUrl = URL.createObjectURL(file);
+      setScanPreview(previewUrl);
+      // Convert to base64
+      const base64 = await new Promise((res, rej) => {
+        const reader = new FileReader();
+        reader.onload = () => res(reader.result.split(",")[1]);
+        reader.onerror = rej;
+        reader.readAsDataURL(file);
+      });
+      const mediaType = file.type || "image/jpeg";
+      const result = await scanLabelWithClaude(base64, mediaType);
+      // Pré-remplir le formulaire
+      if (result.name)        set("name",        result.name);
+      if (result.appellation) set("appellation", result.appellation);
+      if (result.year)        set("year",        String(result.year));
+      if (result.region)      set("region",      result.region);
+      if (result.color && COLOR_META[result.color]) set("color", result.color);
+    } catch (e) {
+      setError("Scan échoué — remplis manuellement");
+    }
+    setLoadingScan(false);
+  }
 
   async function estimate() {
     if (!form.name) return;
@@ -225,6 +296,31 @@ function AddWineSheet({ userId, onClose, onAdded }) {
           <h2 className="text-white font-semibold text-lg">Ajouter une bouteille</h2>
           <button onClick={onClose} className="text-stone-400 text-xl">✕</button>
         </div>
+
+        {/* ── Scan étiquette ── */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          capture="environment"
+          className="hidden"
+          onChange={handleScan}
+        />
+        <button
+          onClick={() => fileRef.current?.click()}
+          disabled={loadingScan}
+          className="w-full bg-amber-700 text-white rounded-xl py-3 text-sm font-medium mb-4 flex items-center justify-center gap-2 disabled:opacity-50"
+        >
+          {loadingScan ? "⏳ Analyse en cours…" : "📷 Scanner l'étiquette"}
+        </button>
+
+        {scanPreview && (
+          <div className="mb-4 rounded-xl overflow-hidden border border-stone-700">
+            <img src={scanPreview} alt="Étiquette" className="w-full max-h-40 object-contain bg-stone-900" />
+            {loadingScan && <div className="text-center text-amber-400 text-xs py-2">Analyse par IA…</div>}
+            {!loadingScan && form.name && <div className="text-center text-emerald-400 text-xs py-2">✓ Formulaire pré-rempli</div>}
+          </div>
+        )}
 
         <div className="space-y-3">
           <div>
