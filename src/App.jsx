@@ -84,13 +84,25 @@ async function updateWine(id, fields) {
   return data;
 }
 
-async function logTasting(wine) {
+async function logTasting(wine, note, score) {
   await supabase.from("wine_tastings").insert([{
-    wine_id:    wine.id,
-    user_id:    wine.user_id,
-    wine_name:  wine.name,
-    wine_year:  wine.year,
+    wine_id:          wine.id,
+    user_id:          wine.user_id,
+    wine_name:        wine.name,
+    wine_year:        wine.year,
+    tasting_note:     note  || null,
+    score_at_tasting: score ? parseInt(score) : null,
   }]);
+}
+
+async function fetchTastings(userId) {
+  const { data, error } = await supabase
+    .from("wine_tastings")
+    .select("*")
+    .eq("user_id", userId)
+    .order("drank_at", { ascending: false });
+  if (error) throw error;
+  return data;
 }
 
 // ─── PROXY ANTHROPIC (via Netlify Function) ──────────────────────────────────
@@ -532,7 +544,7 @@ function EditWineSheet({ wine, onClose, onUpdated }) {
 }
 
 // ─── WINE DETAIL ──────────────────────────────────────────────────────────────
-function WineDetail({ wine, onClose, onDrink, onDelete, onEdit }) {
+function WineDetail({ wine, onClose, onDrink, onDelete, onEdit, onDrinkClick }) {
   const urgency = getDrinkUrgency(wine);
   const meta    = COLOR_META[wine.color] || COLOR_META.rouge;
   const RANGE_START = 2000, RANGE_END = 2060;
@@ -593,7 +605,7 @@ function WineDetail({ wine, onClose, onDrink, onDelete, onEdit }) {
 
         <div className="flex gap-3">
           <button
-            onClick={() => { onDrink(wine); onClose(); }}
+            onClick={onDrinkClick}
             className="flex-1 bg-emerald-800 text-white rounded-xl py-3.5 text-sm font-semibold"
           >Marquer comme bue</button>
           <button
@@ -606,6 +618,90 @@ function WineDetail({ wine, onClose, onDrink, onDelete, onEdit }) {
           >✕</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ─── DRINK SHEET (note + score avant d'enregistrer) ──────────────────────────
+function DrinkSheet({ wine, onClose, onConfirm }) {
+  const [note,  setNote]  = useState("");
+  const [score, setScore] = useState("");
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-end" onClick={onClose}>
+      <div className="bg-stone-950 rounded-t-2xl w-full p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-white font-semibold">Marquer comme bue</h2>
+          <button onClick={onClose} className="text-stone-400 text-xl">✕</button>
+        </div>
+        <div className="text-stone-400 text-sm mb-4">
+          {wine.name} · {wine.year}
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className="text-stone-400 text-xs mb-1 block">Note de dégustation (optionnel)</label>
+            <textarea
+              className="w-full bg-stone-800 text-white rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-amber-600"
+              rows={3}
+              placeholder="Arômes, texture, longueur en bouche…"
+              value={note}
+              onChange={e => setNote(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="text-stone-400 text-xs mb-1 block">Score /100 (optionnel)</label>
+            <input
+              className="w-full bg-stone-800 text-white rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-amber-600"
+              type="number" min="0" max="100" placeholder="92"
+              value={score}
+              onChange={e => setScore(e.target.value)}
+            />
+          </div>
+        </div>
+        <button
+          onClick={() => onConfirm(note, score)}
+          className="w-full bg-emerald-700 text-white rounded-xl py-3.5 text-sm font-semibold mt-5"
+        >Confirmer</button>
+      </div>
+    </div>
+  );
+}
+
+// ─── TASTINGS VIEW ────────────────────────────────────────────────────────────
+function TastingsView({ tastings, loading }) {
+  if (loading) return <div className="text-stone-500 text-center py-10 text-sm">Chargement…</div>;
+  if (!tastings.length) return (
+    <div className="text-center py-16">
+      <div className="text-4xl mb-3">📖</div>
+      <div className="text-stone-400 text-sm">Aucune dégustation enregistrée</div>
+      <div className="text-stone-600 text-xs mt-1">Marque une bouteille comme bue pour commencer</div>
+    </div>
+  );
+
+  return (
+    <div className="px-5">
+      {tastings.map(t => (
+        <div key={t.id} className="bg-stone-900 rounded-xl p-4 mb-3 border-l-4 border-amber-700">
+          <div className="flex justify-between items-start mb-1">
+            <div>
+              <div className="text-white text-sm font-medium">{t.wine_name}</div>
+              <div className="text-stone-400 text-xs mt-0.5">Millésime {t.wine_year}</div>
+            </div>
+            <div className="text-right">
+              {t.score_at_tasting && (
+                <div className="text-amber-400 text-sm font-semibold">★ {t.score_at_tasting}/100</div>
+              )}
+              <div className="text-stone-500 text-xs mt-0.5">
+                {new Date(t.drank_at).toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" })}
+              </div>
+            </div>
+          </div>
+          {t.tasting_note && (
+            <div className="text-stone-300 text-xs mt-2 italic">"{t.tasting_note}"</div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -671,6 +767,9 @@ export default function CaveApp() {
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
   const [editingWine, setEditingWine] = useState(null);
+  const [drinkingWine, setDrinkingWine] = useState(null);
+  const [tastings, setTastings]   = useState([]);
+  const [tastingsLoading, setTastingsLoading] = useState(false);
   const [search, setSearch] = useState("");
 
   // Auth listener
@@ -691,13 +790,22 @@ export default function CaveApp() {
     fetchWines(user.id).then(setWines).catch(console.error);
   }, [user]);
 
-  async function handleDrink(wine) {
-    await logTasting(wine);
+  // Load tastings when tab is opened
+  useEffect(() => {
+    if (view !== "tastings" || !user) return;
+    setTastingsLoading(true);
+    fetchTastings(user.id).then(t => { setTastings(t); setTastingsLoading(false); });
+  }, [view, user]);
+
+  async function handleDrink(wine, note, score) {
+    await logTasting(wine, note, score);
     const updated = await updateWineQty(wine.id, wine.quantity - 1);
     setWines(ws => updated
       ? ws.map(w => w.id === wine.id ? updated : w)
       : ws.filter(w => w.id !== wine.id)
     );
+    setDrinkingWine(null);
+    setSelected(null);
   }
 
   async function handleDelete(wine) {
@@ -758,6 +866,7 @@ export default function CaveApp() {
     { id: "dashboard", label: "Cave",    icon: "🍷" },
     { id: "list",      label: "Liste",   icon: "📋" },
     { id: "priority",  label: "À boire", icon: "⏰" },
+    { id: "tastings",  label: "Journal", icon: "📖" },
   ];
 
   return (
@@ -876,6 +985,9 @@ export default function CaveApp() {
         </div>
       )}
 
+      {/* ── JOURNAL ── */}
+      {view === "tastings" && <TastingsView tastings={tastings} loading={tastingsLoading} />}
+
       {/* Nav */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-stone-950 border-t border-stone-800 flex">
         {NAV.map(n => (
@@ -891,7 +1003,8 @@ export default function CaveApp() {
       </nav>
 
       {showAdd && <AddWineSheet userId={user.id} onClose={() => setShowAdd(false)} onAdded={handleAdded} />}
-      {selected && <WineDetail wine={selected} onClose={() => setSelected(null)} onDrink={handleDrink} onDelete={handleDelete} onEdit={(w) => { setEditingWine(w); setSelected(null); }} />}
+      {selected && <WineDetail wine={selected} onClose={() => setSelected(null)} onDrink={handleDrink} onDelete={handleDelete} onEdit={(w) => { setEditingWine(w); setSelected(null); }} onDrinkClick={(w) => setDrinkingWine(w)} />}
+      {drinkingWine && <DrinkSheet wine={drinkingWine} onClose={() => setDrinkingWine(null)} onConfirm={(note, score) => handleDrink(drinkingWine, note, score)} />}
       {editingWine && <EditWineSheet wine={editingWine} onClose={() => setEditingWine(null)} onUpdated={handleUpdated} />}
     </div>
   );
