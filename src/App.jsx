@@ -87,24 +87,26 @@ async function logTasting(wine) {
   }]);
 }
 
-// ─── SCAN ÉTIQUETTE via Claude Vision ────────────────────────────────────────
-async function scanLabelWithClaude(base64Image, mediaType) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
+// ─── PROXY ANTHROPIC (via Netlify Function) ──────────────────────────────────
+async function callClaude(payload) {
+  const res = await fetch("/api/claude", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 300,
-      messages: [{
-        role: "user",
-        content: [
-          {
-            type: "image",
-            source: { type: "base64", media_type: mediaType, data: base64Image }
-          },
-          {
-            type: "text",
-            text: `Analyse cette étiquette de vin et extrais les informations.
+    body: JSON.stringify(payload),
+  });
+  return res.json();
+}
+
+// ─── SCAN ÉTIQUETTE via Claude Vision ────────────────────────────────────────
+async function scanLabelWithClaude(base64Image, mediaType) {
+  const data = await callClaude({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 300,
+    messages: [{
+      role: "user",
+      content: [
+        { type: "image", source: { type: "base64", media_type: mediaType, data: base64Image } },
+        { type: "text", text: `Analyse cette étiquette de vin et extrais les informations.
 Réponds UNIQUEMENT en JSON valide :
 {
   "name": "<nom du domaine/château>",
@@ -113,33 +115,25 @@ Réponds UNIQUEMENT en JSON valide :
   "region": "<région viticole>",
   "color": "<rouge|blanc|rosé|champagne>"
 }
-Si une information est absente ou illisible, mets null.`
-          }
-        ]
-      }]
-    })
+Si une information est absente ou illisible, mets null.` }
+      ]
+    }]
   });
-  const data = await res.json();
   const text = (data.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
   return JSON.parse(text);
 }
 
 // ─── PRICE ESTIMATION via Claude API ─────────────────────────────────────────
 async function estimatePriceFromClaude(name, appellation, year) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 200,
-      messages: [{
-        role: "user",
-        content: `Estimation de prix marché actuel (€) pour : "${name}" ${appellation || ""} ${year || ""}.
+  const data = await callClaude({
+    model: "claude-sonnet-4-20250514",
+    max_tokens: 200,
+    messages: [{
+      role: "user",
+      content: `Estimation de prix marché actuel (€) pour : "${name}" ${appellation || ""} ${year || ""}.
 Réponds UNIQUEMENT en JSON valide : {"price": <entier ou null>, "note": "<1 phrase>"}`
-      }]
-    })
+    }]
   });
-  const data = await res.json();
   const text = (data.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
   return JSON.parse(text);
 }
