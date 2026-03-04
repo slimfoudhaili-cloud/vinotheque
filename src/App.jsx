@@ -78,6 +78,12 @@ async function deleteWineById(id) {
   if (error) throw error;
 }
 
+async function updateWine(id, fields) {
+  const { data, error } = await supabase.from("wines").update(fields).eq("id", id).select().single();
+  if (error) throw error;
+  return data;
+}
+
 async function logTasting(wine) {
   await supabase.from("wine_tastings").insert([{
     wine_id:    wine.id,
@@ -262,7 +268,6 @@ function AddWineSheet({ userId, onClose, onAdded }) {
   }
 
   async function submit() {
-    console.log("submit called", form);
     if (!form.name || !form.year || !form.color) return;
     setSaving(true);
     try {
@@ -380,7 +385,7 @@ function AddWineSheet({ userId, onClose, onAdded }) {
                 onClick={estimate}
                 disabled={loadingPrice || !form.name}
                 className="text-xs bg-amber-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-40"
-              >{loadingPrice ? "…" : "Estimer prix et apogée"}</button>
+              >{loadingPrice ? "…" : "Estimer"}</button>
             </div>
             {priceEst && (
               <div>
@@ -400,10 +405,7 @@ function AddWineSheet({ userId, onClose, onAdded }) {
 
         <button
           onClick={submit}
-          //disabled={saving || !form.name || !form.year}
-          //disabled={saving || !form.name}
-          //disabled = {false}
-          disabled={saving}
+          disabled={saving || !form.name || !form.year}
           className="w-full bg-amber-600 text-white rounded-xl py-3.5 text-sm font-semibold mt-5 disabled:opacity-40"
         >{saving ? "Enregistrement…" : "Ajouter à la cave"}</button>
       </div>
@@ -411,8 +413,126 @@ function AddWineSheet({ userId, onClose, onAdded }) {
   );
 }
 
+
+// ─── EDIT WINE SHEET ──────────────────────────────────────────────────────────
+function EditWineSheet({ wine, onClose, onUpdated }) {
+  const [form, setForm] = useState({
+    name:        wine.name        || "",
+    appellation: wine.appellation || "",
+    color:       wine.color       || "rouge",
+    year:        String(wine.year || ""),
+    quantity:    String(wine.quantity || 1),
+    region:      wine.region      || "",
+    notes:       wine.notes       || "",
+    apogeeFrom:  String(wine.apogee_from || ""),
+    apogeeTo:    String(wine.apogee_to   || ""),
+    estimatedPrice: String(wine.estimated_price || ""),
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError]   = useState(null);
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+  const IC  = "w-full bg-stone-800 text-white rounded-lg px-3 py-2.5 text-sm outline-none focus:ring-1 focus:ring-amber-600";
+  const LC  = "text-stone-400 text-xs mb-1 block";
+
+  async function submit() {
+    if (!form.name || !form.year) return;
+    setSaving(true);
+    try {
+      const yr = parseInt(form.year);
+      const updated = await updateWine(wine.id, {
+        name:            form.name.trim(),
+        appellation:     form.appellation.trim() || null,
+        color:           form.color,
+        year:            yr,
+        quantity:        parseInt(form.quantity) || 1,
+        region:          form.region.trim() || null,
+        notes:           form.notes.trim() || null,
+        estimated_price: parseInt(form.estimatedPrice) || null,
+        apogee_from:     parseInt(form.apogeeFrom) || null,
+        apogee_to:       parseInt(form.apogeeTo)   || null,
+      });
+      onUpdated(updated);
+      onClose();
+    } catch (e) {
+      setError("Erreur lors de la mise à jour");
+    }
+    setSaving(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-end" onClick={onClose}>
+      <div className="bg-stone-950 rounded-t-2xl w-full max-h-[90vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-5">
+          <h2 className="text-white font-semibold text-lg">Modifier la bouteille</h2>
+          <button onClick={onClose} className="text-stone-400 text-xl">✕</button>
+        </div>
+        <div className="space-y-3">
+          <div>
+            <label className={LC}>Nom du vin *</label>
+            <input className={IC} value={form.name} onChange={e => set("name", e.target.value)} />
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className={LC}>Appellation</label>
+              <input className={IC} value={form.appellation} onChange={e => set("appellation", e.target.value)} />
+            </div>
+            <div className="w-24">
+              <label className={LC}>Millésime *</label>
+              <input className={IC} value={form.year} onChange={e => set("year", e.target.value)} type="number" />
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className={LC}>Couleur *</label>
+              <select className={IC} value={form.color} onChange={e => set("color", e.target.value)}>
+                <option value="rouge">Rouge</option>
+                <option value="blanc">Blanc</option>
+                <option value="rosé">Rosé</option>
+                <option value="champagne">Champagne</option>
+              </select>
+            </div>
+            <div className="w-24">
+              <label className={LC}>Quantité</label>
+              <input className={IC} value={form.quantity} onChange={e => set("quantity", e.target.value)} type="number" min="1" />
+            </div>
+          </div>
+          <div>
+            <label className={LC}>Région</label>
+            <input className={IC} value={form.region} onChange={e => set("region", e.target.value)} />
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className={LC}>Apogée de</label>
+              <input className={IC} value={form.apogeeFrom} onChange={e => set("apogeeFrom", e.target.value)} type="number" />
+            </div>
+            <div className="flex-1">
+              <label className={LC}>Apogée à</label>
+              <input className={IC} value={form.apogeeTo} onChange={e => set("apogeeTo", e.target.value)} type="number" />
+            </div>
+          </div>
+          <div>
+            <label className={LC}>Prix estimé (€)</label>
+            <input className={IC} value={form.estimatedPrice} onChange={e => set("estimatedPrice", e.target.value)} type="number" />
+          </div>
+          <div>
+            <label className={LC}>Notes</label>
+            <textarea className={IC} rows={2} value={form.notes} onChange={e => set("notes", e.target.value)} />
+          </div>
+          {error && <div className="text-red-400 text-xs text-center">{error}</div>}
+        </div>
+        <button
+          onClick={submit}
+          disabled={saving}
+          className="w-full bg-amber-600 text-white rounded-xl py-3.5 text-sm font-semibold mt-5 disabled:opacity-40"
+        >{saving ? "Enregistrement…" : "Enregistrer les modifications"}</button>
+      </div>
+    </div>
+  );
+}
+
 // ─── WINE DETAIL ──────────────────────────────────────────────────────────────
-function WineDetail({ wine, onClose, onDrink, onDelete }) {
+function WineDetail({ wine, onClose, onDrink, onDelete, onEdit }) {
   const urgency = getDrinkUrgency(wine);
   const meta    = COLOR_META[wine.color] || COLOR_META.rouge;
   const RANGE_START = 2000, RANGE_END = 2060;
@@ -477,9 +597,13 @@ function WineDetail({ wine, onClose, onDrink, onDelete }) {
             className="flex-1 bg-emerald-800 text-white rounded-xl py-3.5 text-sm font-semibold"
           >Marquer comme bue</button>
           <button
+            onClick={() => onEdit(wine)}
+            className="bg-stone-800 text-amber-400 rounded-xl px-4 py-3.5 text-sm"
+          >✏️</button>
+          <button
             onClick={() => { onDelete(wine); onClose(); }}
             className="bg-stone-800 text-red-400 rounded-xl px-4 py-3.5 text-sm"
-          >Supprimer</button>
+          >✕</button>
         </div>
       </div>
     </div>
@@ -546,6 +670,7 @@ export default function CaveApp() {
   const [groupBy, setGroupBy] = useState("color");
   const [showAdd, setShowAdd] = useState(false);
   const [selected, setSelected] = useState(null);
+  const [editingWine, setEditingWine] = useState(null);
   const [search, setSearch] = useState("");
 
   // Auth listener
@@ -582,6 +707,11 @@ export default function CaveApp() {
 
   function handleAdded(wine) {
     setWines(ws => [wine, ...ws]);
+  }
+
+  function handleUpdated(updated) {
+    setWines(ws => ws.map(w => w.id === updated.id ? updated : w));
+    setSelected(updated);
   }
 
   // Stats
@@ -761,7 +891,8 @@ export default function CaveApp() {
       </nav>
 
       {showAdd && <AddWineSheet userId={user.id} onClose={() => setShowAdd(false)} onAdded={handleAdded} />}
-      {selected && <WineDetail wine={selected} onClose={() => setSelected(null)} onDrink={handleDrink} onDelete={handleDelete} />}
+      {selected && <WineDetail wine={selected} onClose={() => setSelected(null)} onDrink={handleDrink} onDelete={handleDelete} onEdit={(w) => { setEditingWine(w); setSelected(null); }} />}
+      {editingWine && <EditWineSheet wine={editingWine} onClose={() => setEditingWine(null)} onUpdated={handleUpdated} />}
     </div>
   );
 }
