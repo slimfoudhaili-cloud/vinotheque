@@ -379,7 +379,7 @@ function AddWineSheet({ userId, onClose, onAdded }) {
                 onClick={estimate}
                 disabled={loadingPrice || !form.name}
                 className="text-xs bg-amber-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-40"
-              >{loadingPrice ? "…" : "Estimer"}</button>
+              >{loadingPrice ? "…" : "Estimer prix et apogée"}</button>
             </div>
             {priceEst && (
               <div>
@@ -399,7 +399,10 @@ function AddWineSheet({ userId, onClose, onAdded }) {
 
         <button
           onClick={submit}
-          disabled={saving || !form.name || !form.year}
+          //disabled={saving || !form.name || !form.year}
+          //disabled={saving || !form.name}
+          //disabled = {false}
+          disabled={saving}
           className="w-full bg-amber-600 text-white rounded-xl py-3.5 text-sm font-semibold mt-5 disabled:opacity-40"
         >{saving ? "Enregistrement…" : "Ajouter à la cave"}</button>
       </div>
