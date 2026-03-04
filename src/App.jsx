@@ -770,6 +770,108 @@ Réponds UNIQUEMENT en JSON valide :
   );
 }
 
+
+// ─── WINE RECO SHEET ("Qu'est-ce que je bois ce soir ?") ─────────────────────
+function WineRecoSheet({ wines, onClose, onSelectWine }) {
+  const [menu, setMenu]       = useState("");
+  const [reco, setReco]       = useState(null);
+  const [loading, setLoading] = useState(false);
+
+  async function askReco() {
+    if (!menu.trim()) return;
+    setLoading(true);
+    setReco(null);
+    try {
+      const caveSummary = wines.map(w =>
+        `- ${w.name} ${w.appellation || ""} ${w.year} (${w.color}, ${w.quantity} btl, apogée ${w.apogee_from || "?"}–${w.apogee_to || "?"})`
+      ).join("\n");
+
+      const data = await callClaude({
+        model: "claude-sonnet-4-20250514",
+        max_tokens: 400,
+        messages: [{
+          role: "user",
+          content: `Tu es un sommelier expert. Voici ma cave :
+${caveSummary}
+
+Ce soir je prépare : ${menu}
+
+Recommande LA bouteille idéale parmi ma cave pour ce repas. Tiens compte de l'apogée et du nombre de bouteilles restantes.
+Réponds UNIQUEMENT en JSON valide :
+{
+  "name": "<nom exact du vin tel qu'il apparaît dans la cave>",
+  "year": <millésime entier>,
+  "reason": "<explication 2-3 phrases, pourquoi ce vin avec ce plat>",
+  "alternative": "<nom d'un 2e choix si disponible, sinon null>"
+}`
+        }]
+      });
+      const text = (data.content?.[0]?.text || "{}").replace(/\`\`\`json|\`\`\`/g, "").trim();
+      const parsed = JSON.parse(text);
+      // Find matching wine in cave
+      const match = wines.find(w =>
+        w.name.toLowerCase().includes(parsed.name?.toLowerCase() || "") ||
+        parsed.name?.toLowerCase().includes(w.name.toLowerCase())
+      );
+      setReco({ ...parsed, wine: match || null });
+    } catch {
+      setReco({ error: true });
+    }
+    setLoading(false);
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-50 flex items-end" onClick={onClose}>
+      <div className="bg-stone-950 rounded-t-2xl w-full max-h-[85vh] overflow-y-auto p-5" onClick={e => e.stopPropagation()}>
+        <div className="flex justify-between items-center mb-2">
+          <h2 className="text-white font-semibold">Ce soir je bois…</h2>
+          <button onClick={onClose} className="text-stone-400 text-xl">✕</button>
+        </div>
+        <div className="text-stone-400 text-xs mb-5">Décris ton menu, je te suggère la bouteille idéale dans ta cave.</div>
+
+        <textarea
+          className="w-full bg-stone-800 text-white rounded-xl px-4 py-3 text-sm outline-none focus:ring-1 focus:ring-amber-600 mb-3"
+          rows={3}
+          placeholder="Ex : magret de canard aux cèpes, ou plateau de fromages, ou sushi..."
+          value={menu}
+          onChange={e => setMenu(e.target.value)}
+        />
+        <button
+          onClick={askReco}
+          disabled={loading || !menu.trim()}
+          className="w-full bg-amber-600 text-white rounded-xl py-3 text-sm font-semibold mb-5 disabled:opacity-40"
+        >{loading ? "Consultation en cours…" : "Quelle bouteille ?"}</button>
+
+        {reco?.error && (
+          <div className="text-red-400 text-sm text-center">Erreur — réessaie</div>
+        )}
+
+        {reco && !reco.error && (
+          <div>
+            <div className="bg-stone-900 rounded-xl p-4 mb-3 border-l-4 border-amber-600">
+              <div className="text-amber-400 text-xs uppercase tracking-wider mb-2">Recommandation principale</div>
+              <div className="text-white font-semibold text-base">{reco.name} {reco.year}</div>
+              <div className="text-stone-300 text-sm mt-2">{reco.reason}</div>
+              {reco.wine && (
+                <button
+                  onClick={() => { onSelectWine(reco.wine); onClose(); }}
+                  className="mt-3 text-xs bg-stone-800 text-amber-400 px-3 py-1.5 rounded-lg"
+                >Voir la fiche →</button>
+              )}
+            </div>
+            {reco.alternative && (
+              <div className="bg-stone-900 rounded-xl p-4 border-l-4 border-stone-600">
+                <div className="text-stone-400 text-xs uppercase tracking-wider mb-1">Alternative</div>
+                <div className="text-stone-300 text-sm">{reco.alternative}</div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── AUTH SCREEN ──────────────────────────────────────────────────────────────
 function AuthScreen({ onAuth }) {
   const [email, setEmail]       = useState("");
@@ -833,6 +935,7 @@ export default function CaveApp() {
   const [editingWine, setEditingWine] = useState(null);
   const [drinkingWine, setDrinkingWine] = useState(null);
   const [pairingWine, setPairingWine]   = useState(null);
+  const [showReco, setShowReco]         = useState(false);
   const [tastings, setTastings]   = useState([]);
   const [tastingsLoading, setTastingsLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -945,6 +1048,7 @@ export default function CaveApp() {
           </div>
           <div className="flex items-center gap-2">
             <button onClick={() => supabase.auth.signOut()} className="text-stone-500 text-xs px-2 py-1 rounded-lg bg-stone-900">⎋</button>
+            <button onClick={() => setShowReco(true)} className="bg-stone-800 text-white w-10 h-10 rounded-full flex items-center justify-center text-lg shadow-lg" title="Que boire ce soir ?">🍽️</button>
             <button onClick={() => setShowAdd(true)} className="bg-amber-600 text-white w-10 h-10 rounded-full flex items-center justify-center text-xl shadow-lg">+</button>
           </div>
         </div>
@@ -1070,6 +1174,7 @@ export default function CaveApp() {
       {showAdd && <AddWineSheet userId={user.id} onClose={() => setShowAdd(false)} onAdded={handleAdded} />}
       {selected && <WineDetail wine={selected} onClose={() => setSelected(null)} onDrink={handleDrink} onDelete={handleDelete} onEdit={(w) => { setEditingWine(w); setSelected(null); }} onDrinkClick={(w) => setDrinkingWine(w)} onPairing={(w) => setPairingWine(w)} />}
       {pairingWine && <FoodPairingSheet wine={pairingWine} onClose={() => setPairingWine(null)} />}
+      {showReco && <WineRecoSheet wines={wines} onClose={() => setShowReco(false)} onSelectWine={(w) => { setSelected(w); setShowReco(false); }} />}
       {drinkingWine && <DrinkSheet wine={drinkingWine} onClose={() => setDrinkingWine(null)} onConfirm={(note, score) => handleDrink(drinkingWine, note, score)} />}
       {editingWine && <EditWineSheet wine={editingWine} onClose={() => setEditingWine(null)} onUpdated={handleUpdated} />}
     </div>
