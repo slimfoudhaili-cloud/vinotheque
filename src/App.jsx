@@ -141,19 +141,26 @@ Si une information est absente ou illisible, mets null.` }
   return JSON.parse(text);
 }
 
-// ─── PRICE + APOGÉE ESTIMATION via Claude API ────────────────────────────────
-async function estimatePriceFromClaude(name, appellation, year) {
+// ─── ESTIMATION COMPLÈTE (prix + apogée + carafage) via Claude API ────────────
+async function estimateWineInfo(name, appellation, year) {
   const data = await callClaude({
     model: "claude-sonnet-4-20250514",
-    max_tokens: 300,
+    max_tokens: 400,
     messages: [{
       role: "user",
-      content: `Pour ce vin : "${name}" ${appellation || ""} ${year || ""}, donne :
-1. Une estimation de prix marché actuel (€)
-2. La fenêtre d'apogée (année début et fin idéales pour boire)
+      content: `Tu es un expert en vins. Pour ce vin : "${name}" ${appellation || ""} ${year || ""}, fournis :
+1. Estimation de prix marché actuel (€)
+2. Fenêtre d'apogée (années début et fin)
+3. Temps de carafage recommandé
 
 Réponds UNIQUEMENT en JSON valide :
-{"price": <entier ou null>, "note": "<1 phrase>", "apogee_from": <année entière ou null>, "apogee_to": <année entière ou null>}`
+{
+  "price": <entier ou null>,
+  "price_note": "<1 phrase sur le prix>",
+  "apogee_from": <année entière ou null>,
+  "apogee_to": <année entière ou null>,
+  "carafage": "<durée ex: 1h, 30 min, Pas nécessaire, ou null si inconnu>"
+}`
     }]
   });
   const text = (data.content?.[0]?.text || "{}").replace(/```json|```/g, "").trim();
@@ -222,7 +229,7 @@ function WineCard({ wine, onDrink, onDelete, onClick }) {
 
 // ─── ADD WINE SHEET ───────────────────────────────────────────────────────────
 function AddWineSheet({ userId, onClose, onAdded }) {
-  const empty = { name: "", appellation: "", color: "rouge", year: "", quantity: "1", region: "", notes: "", apogeeFrom: "", apogeeTo: "" };
+  const empty = { name: "", appellation: "", color: "rouge", year: "", quantity: "1", region: "", carafage: "", notes: "", apogeeFrom: "", apogeeTo: "" };
   const [form, setForm]         = useState(empty);
   const [priceEst, setPriceEst] = useState(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
@@ -271,11 +278,12 @@ function AddWineSheet({ userId, onClose, onAdded }) {
     if (!form.name) return;
     setLoadingPrice(true);
     try {
-      const est = await estimatePriceFromClaude(form.name, form.appellation, form.year);
+      const est = await estimateWineInfo(form.name, form.appellation, form.year);
       setPriceEst(est);
       if (est.apogee_from) set("apogeeFrom", String(est.apogee_from));
       if (est.apogee_to)   set("apogeeTo",   String(est.apogee_to));
-    } catch { setPriceEst({ price: null, note: "Indisponible" }); }
+      if (est.carafage)    set("carafage",   est.carafage);
+    } catch { setPriceEst({ price: null, price_note: "Indisponible" }); }
     setLoadingPrice(false);
   }
 
@@ -292,6 +300,7 @@ function AddWineSheet({ userId, onClose, onAdded }) {
         year:            yr,
         quantity:        parseInt(form.quantity) || 1,
         region:          form.region.trim() || null,
+        carafage:        form.carafage.trim() || null,
         notes:           form.notes.trim() || null,
         estimated_price: priceEst?.price || null,
         apogee_from:     parseInt(form.apogeeFrom) || yr + 3,
@@ -374,6 +383,10 @@ function AddWineSheet({ userId, onClose, onAdded }) {
             <label className={LC}>Région</label>
             <input className={IC} placeholder="Bordeaux" value={form.region} onChange={e => set("region", e.target.value)} />
           </div>
+          <div>
+            <label className={LC}>Temps de carafage</label>
+            <input className={IC} placeholder="Ex : 1h, 30 min, pas nécessaire" value={form.carafage} onChange={e => set("carafage", e.target.value)} />
+          </div>
           <div className="flex gap-2">
             <div className="flex-1">
               <label className={LC}>Apogée de</label>
@@ -389,25 +402,36 @@ function AddWineSheet({ userId, onClose, onAdded }) {
             <textarea className={IC} rows={2} value={form.notes} onChange={e => set("notes", e.target.value)} />
           </div>
 
-          {/* Estimation prix */}
-          <div className="bg-stone-800 rounded-xl p-3">
-            <div className="flex items-center justify-between mb-2">
-              <span className="text-stone-300 text-sm">Estimation de prix</span>
+          {/* Compléter avec IA */}
+          <div className="bg-stone-800 rounded-xl p-4 border border-stone-700">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <div className="text-stone-200 text-sm font-medium">Compléter avec IA</div>
+                <div className="text-stone-500 text-xs mt-0.5">Prix · Apogée · Carafage</div>
+              </div>
               <button
                 onClick={estimate}
                 disabled={loadingPrice || !form.name}
-                className="text-xs bg-amber-700 text-white px-3 py-1.5 rounded-lg disabled:opacity-40"
-              >{loadingPrice ? "…" : "Estimer"}</button>
+                className="text-xs bg-amber-600 text-white px-4 py-2 rounded-lg disabled:opacity-40 font-medium"
+              >{loadingPrice ? "…" : "Analyser"}</button>
             </div>
             {priceEst && (
-              <div>
-                <div className="text-white font-semibold">{priceEst.price ? `${priceEst.price} €` : "Non trouvé"}</div>
-                <div className="text-stone-400 text-xs mt-0.5">{priceEst.note}</div>
-                {priceEst.apogee_from && (
-                  <div className="text-emerald-400 text-xs mt-1">
-                    Apogée estimée : {priceEst.apogee_from}–{priceEst.apogee_to}
-                  </div>
+              <div className="space-y-2 pt-2 border-t border-stone-700">
+                <div className="flex justify-between items-center">
+                  <span className="text-stone-400 text-xs">Prix estimé</span>
+                  <span className="text-white text-sm font-semibold">{priceEst.price ? `${priceEst.price} €` : "—"}</span>
+                </div>
+                {priceEst.price_note && (
+                  <div className="text-stone-500 text-xs">{priceEst.price_note}</div>
                 )}
+                <div className="flex justify-between items-center">
+                  <span className="text-stone-400 text-xs">Apogée</span>
+                  <span className="text-emerald-400 text-sm">{priceEst.apogee_from ? `${priceEst.apogee_from}–${priceEst.apogee_to}` : "—"}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="text-stone-400 text-xs">Carafage</span>
+                  <span className="text-amber-300 text-sm">{priceEst.carafage || "—"}</span>
+                </div>
               </div>
             )}
           </div>
@@ -552,7 +576,7 @@ function WineDetail({ wine, onClose, onDrink, onDelete, onEdit, onDrinkClick, on
   return (
     <div className="fixed inset-0 bg-stone-950 z-50 overflow-y-auto">
       <div className="p-5">
-        <button onClick={onClose} className="text-stone-400 mb-5 flex items-center gap-1 text-sm">← Retour</button>
+        <button onClick={onClose} className="text-stone-400 mb-5 flex items-center gap-1 text-sm mt-8">← Retour</button>
         <div className="flex items-start gap-3 mb-6">
           <div className={`w-10 h-10 rounded-full ${meta.bg} flex items-center justify-center flex-shrink-0`}>
             <span className={`w-4 h-4 rounded-full ${meta.dot}`} />
@@ -601,6 +625,15 @@ function WineDetail({ wine, onClose, onDrink, onDelete, onEdit, onDrinkClick, on
           </div>
         )}
 
+        {wine.carafage && (
+          <div className="bg-stone-900 rounded-xl p-4 mb-3 flex items-center gap-3">
+            <span className="text-xl">🫗</span>
+            <div>
+              <div className="text-stone-400 text-xs">Carafage recommandé</div>
+              <div className="text-white text-sm font-medium">{wine.carafage}</div>
+            </div>
+          </div>
+        )}
         <div className="text-stone-600 text-xs mb-5">{wine.region} · Ajouté le {wine.added_at?.slice(0, 10)}</div>
 
         <div className="flex gap-3">
