@@ -229,7 +229,7 @@ function WineCard({ wine, onDrink, onDelete, onClick }) {
 
 // ─── ADD WINE SHEET ───────────────────────────────────────────────────────────
 function AddWineSheet({ userId, onClose, onAdded }) {
-  const empty = { name: "", appellation: "", color: "rouge", year: "", quantity: "1", region: "", carafage: "", notes: "", apogeeFrom: "", apogeeTo: "" };
+  const empty = { name: "", appellation: "", color: "rouge", year: "", quantity: "1", region: "", carafage: "", notes: "", apogeeFrom: "", apogeeTo: "", estimatedPrice: "" };
   const [form, setForm]         = useState(empty);
   const [priceEst, setPriceEst] = useState(null);
   const [loadingPrice, setLoadingPrice] = useState(false);
@@ -302,7 +302,7 @@ function AddWineSheet({ userId, onClose, onAdded }) {
         region:          form.region.trim() || null,
         carafage:        form.carafage.trim() || null,
         notes:           form.notes.trim() || null,
-        estimated_price: priceEst?.price || null,
+        estimated_price: parseInt(form.estimatedPrice) || priceEst?.price || null,
         apogee_from:     parseInt(form.apogeeFrom) || yr + 3,
         apogee_to:       parseInt(form.apogeeTo)   || yr + 15,
         score:           null,
@@ -383,58 +383,53 @@ function AddWineSheet({ userId, onClose, onAdded }) {
             <label className={LC}>Région</label>
             <input className={IC} placeholder="Bordeaux" value={form.region} onChange={e => set("region", e.target.value)} />
           </div>
-          <div>
+
+          {/* Encart Carafage */}
+          <div className="bg-stone-800 rounded-xl p-3">
             <label className={LC}>Temps de carafage</label>
-            <input className={IC} placeholder="Ex : 1h, 30 min, pas nécessaire" value={form.carafage} onChange={e => set("carafage", e.target.value)} />
+            <input className={IC} placeholder="Ex : 1h, 30 min, Pas nécessaire" value={form.carafage} onChange={e => set("carafage", e.target.value)} />
           </div>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className={LC}>Apogée de</label>
-              <input className={IC} placeholder="2028" value={form.apogeeFrom} onChange={e => set("apogeeFrom", e.target.value)} type="number" />
-            </div>
-            <div className="flex-1">
-              <label className={LC}>Apogée à</label>
-              <input className={IC} placeholder="2040" value={form.apogeeTo} onChange={e => set("apogeeTo", e.target.value)} type="number" />
+
+          {/* Encart Apogée */}
+          <div className="bg-stone-800 rounded-xl p-3">
+            <label className="text-stone-400 text-xs mb-2 block">Apogée</label>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className={LC}>De</label>
+                <input className={IC} placeholder="2028" value={form.apogeeFrom} onChange={e => set("apogeeFrom", e.target.value)} type="number" />
+              </div>
+              <div className="flex-1">
+                <label className={LC}>À</label>
+                <input className={IC} placeholder="2040" value={form.apogeeTo} onChange={e => set("apogeeTo", e.target.value)} type="number" />
+              </div>
             </div>
           </div>
+
+          {/* Encart Prix */}
+          <div className="bg-stone-800 rounded-xl p-3">
+            <label className={LC}>Prix estimé (€)</label>
+            <input className={IC} placeholder="Ex : 25" value={form.estimatedPrice || ""} onChange={e => set("estimatedPrice", e.target.value)} type="number" />
+          </div>
+
           <div>
             <label className={LC}>Notes</label>
             <textarea className={IC} rows={2} value={form.notes} onChange={e => set("notes", e.target.value)} />
           </div>
 
           {/* Compléter avec IA */}
-          <div className="bg-stone-800 rounded-xl p-4 border border-stone-700">
-            <div className="flex items-center justify-between mb-3">
-              <div>
-                <div className="text-stone-200 text-sm font-medium">Compléter avec IA</div>
-                <div className="text-stone-500 text-xs mt-0.5">Prix · Apogée · Carafage</div>
-              </div>
-              <button
-                onClick={estimate}
-                disabled={loadingPrice || !form.name}
-                className="text-xs bg-amber-600 text-white px-4 py-2 rounded-lg disabled:opacity-40 font-medium"
-              >{loadingPrice ? "…" : "Analyser"}</button>
+          <button
+            onClick={estimate}
+            disabled={loadingPrice || !form.name}
+            className="w-full bg-stone-700 text-white rounded-xl py-3 text-sm font-medium disabled:opacity-40 flex items-center justify-center gap-2"
+          >{loadingPrice ? "⏳ Analyse en cours…" : "✨ Compléter avec IA"}</button>
+          {priceEst && (
+            <div className="bg-stone-800 rounded-xl p-3 text-xs space-y-1">
+              <div className="flex justify-between"><span className="text-stone-400">Prix</span><span className="text-white font-medium">{priceEst.price ? `${priceEst.price} €` : "—"}</span></div>
+              <div className="flex justify-between"><span className="text-stone-400">Apogée</span><span className="text-emerald-400">{priceEst.apogee_from ? `${priceEst.apogee_from}–${priceEst.apogee_to}` : "—"}</span></div>
+              <div className="flex justify-between"><span className="text-stone-400">Carafage</span><span className="text-amber-300">{priceEst.carafage || "—"}</span></div>
+              {priceEst.price_note && <div className="text-stone-500 pt-1">{priceEst.price_note}</div>}
             </div>
-            {priceEst && (
-              <div className="space-y-2 pt-2 border-t border-stone-700">
-                <div className="flex justify-between items-center">
-                  <span className="text-stone-400 text-xs">Prix estimé</span>
-                  <span className="text-white text-sm font-semibold">{priceEst.price ? `${priceEst.price} €` : "—"}</span>
-                </div>
-                {priceEst.price_note && (
-                  <div className="text-stone-500 text-xs">{priceEst.price_note}</div>
-                )}
-                <div className="flex justify-between items-center">
-                  <span className="text-stone-400 text-xs">Apogée</span>
-                  <span className="text-emerald-400 text-sm">{priceEst.apogee_from ? `${priceEst.apogee_from}–${priceEst.apogee_to}` : "—"}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-stone-400 text-xs">Carafage</span>
-                  <span className="text-amber-300 text-sm">{priceEst.carafage || "—"}</span>
-                </div>
-              </div>
-            )}
-          </div>
+          )}
 
           {error && <div className="text-red-400 text-xs text-center">{error}</div>}
         </div>
@@ -459,6 +454,7 @@ function EditWineSheet({ wine, onClose, onUpdated }) {
     year:        String(wine.year || ""),
     quantity:    String(wine.quantity || 1),
     region:      wine.region      || "",
+    carafage:    wine.carafage    || "",
     notes:       wine.notes       || "",
     apogeeFrom:  String(wine.apogee_from || ""),
     apogeeTo:    String(wine.apogee_to   || ""),
@@ -483,6 +479,7 @@ function EditWineSheet({ wine, onClose, onUpdated }) {
         year:            yr,
         quantity:        parseInt(form.quantity) || 1,
         region:          form.region.trim() || null,
+        carafage:        form.carafage.trim() || null,
         notes:           form.notes.trim() || null,
         estimated_price: parseInt(form.estimatedPrice) || null,
         apogee_from:     parseInt(form.apogeeFrom) || null,
@@ -537,17 +534,30 @@ function EditWineSheet({ wine, onClose, onUpdated }) {
             <label className={LC}>Région</label>
             <input className={IC} value={form.region} onChange={e => set("region", e.target.value)} />
           </div>
-          <div className="flex gap-2">
-            <div className="flex-1">
-              <label className={LC}>Apogée de</label>
-              <input className={IC} value={form.apogeeFrom} onChange={e => set("apogeeFrom", e.target.value)} type="number" />
-            </div>
-            <div className="flex-1">
-              <label className={LC}>Apogée à</label>
-              <input className={IC} value={form.apogeeTo} onChange={e => set("apogeeTo", e.target.value)} type="number" />
+
+          {/* Encart Carafage */}
+          <div className="bg-stone-700 rounded-xl p-3">
+            <label className={LC}>Temps de carafage</label>
+            <input className={IC} placeholder="Ex : 1h, 30 min, Pas nécessaire" value={form.carafage} onChange={e => set("carafage", e.target.value)} />
+          </div>
+
+          {/* Encart Apogée */}
+          <div className="bg-stone-700 rounded-xl p-3">
+            <label className="text-stone-400 text-xs mb-2 block">Apogée</label>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <label className={LC}>De</label>
+                <input className={IC} placeholder="2028" value={form.apogeeFrom} onChange={e => set("apogeeFrom", e.target.value)} type="number" />
+              </div>
+              <div className="flex-1">
+                <label className={LC}>À</label>
+                <input className={IC} placeholder="2040" value={form.apogeeTo} onChange={e => set("apogeeTo", e.target.value)} type="number" />
+              </div>
             </div>
           </div>
-          <div>
+
+          {/* Encart Prix */}
+          <div className="bg-stone-700 rounded-xl p-3">
             <label className={LC}>Prix estimé (€)</label>
             <input className={IC} value={form.estimatedPrice} onChange={e => set("estimatedPrice", e.target.value)} type="number" />
           </div>
